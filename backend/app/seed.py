@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import date, datetime
+import json
 
 from app.db import db, init_db
 
@@ -52,12 +53,36 @@ def seed_if_empty() -> None:
             ("口门软容量提示", "120", "回流自动再路由", "否"),
         )
         # 预置一笔待路由扫描，方便冒烟看见分布
-        conn.execute(
+        seed_scan_cur = conn.execute(
             """
             INSERT INTO scans(barcode, dest_code, shift_id, line_id, status, scanned_at, note)
             VALUES (?, ?, ?, ?, '待路由', ?, ?)
             """,
             ("YB202611240001", "110", shift_id, line_id, now, "种子待路由"),
+        )
+        seed_scan_id = seed_scan_cur.lastrowid
+        seed_payload = json.dumps(
+            {
+                "变更": {"status": "待路由", "dest_code": "110"},
+                "barcode": "YB202611240001",
+                "dest_code": "110",
+                "shift_id": shift_id,
+                "line_id": line_id,
+                "seed": True,
+            },
+            ensure_ascii=False,
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO domain_events
+              (event_uid, aggregate_type, aggregate_id, event_type, payload_json, created_at)
+            VALUES ('seed-scan-YB202611240001', '扫描', ?, '扫描装载', ?, ?)
+            """,
+            (seed_scan_id, seed_payload, now),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(kind, ref_id, action, created_at, note) VALUES (?, ?, ?, ?, ?)",
+            ("扫描", seed_scan_id, "种子装载", now, "种子待路由"),
         )
         conn.execute(
             "INSERT INTO audit_events(kind, ref_id, action, created_at, note) VALUES (?, ?, ?, ?, ?)",
